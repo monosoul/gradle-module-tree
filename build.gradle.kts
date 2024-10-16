@@ -69,7 +69,7 @@ gradlePlugin {
         displayName = pluginName
         description = pluginDescription
 
-        tags.set(listOf("Gradle", "module", "tree"))
+        tags.set(listOf("module", "tree", "settings", "submodule", "project"))
     }
 }
 
