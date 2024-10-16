@@ -1,0 +1,94 @@
+name: Build PR
+
+on:
+  pull_request:
+    types: [ opened, synchronize ]
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Run tests
+        run: >
+          ./gradlew
+          --stacktrace
+          check jacocoTestReport
+      - name: Test publishing
+        run: >
+          ./gradlew
+          --stacktrace
+          publishToMavenLocal
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v4
+        if: always() # always run even if the previous step fails
+        with:
+          check_name: JUnit Test Report
+          report_paths: '**/build/test-results/**/TEST-*.xml'
+          annotate_notice: false
+      - name: Coverage Report
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
+
+  publish-snapshot:
+    name: Publish snapshot
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    environment: snapshot
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Publish plugin
+        run: >
+          ./gradlew
+          -Pversion=SNAPSHOT-${{ github.sha }}
+          assemble publishAllPublicationsToSnapshotRepository
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Snapshot coordinates comment
+        uses: thollander/actions-comment-pull-request@v3
+        with:
+          message: |
+            To use the snapshot version of the plugin add this to `settings.gradle.kts`:
+            ```kotlin
+            pluginManagement {
+              repositories {
+                maven {
+                  name = "ModuleTreePluginSnapshotRepo"
+                  url = uri("https://maven.pkg.github.com/monosoul/gradle-module-tree/")
+                  credentials {
+                    username = "<your GitHub username>"
+                    password = "<your GitHub access token with read:packages scope>"
+                  }
+                }
+                gradlePluginPortal()
+              }
+            }
+            
+            plugins {
+              id("dev.monosoul.module-tree") version "SNAPSHOT-${{ github.sha }}"
+            }
+            ```
